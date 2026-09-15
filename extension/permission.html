@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Микрофон GigaAM STT</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="page">
+    <div class="card">
+      <h1>Доступ к микрофону</h1>
+      <p class="muted">Браузер спросит микрофон. В Firefox разрешение привязано к <strong>сайту</strong>, на котором вы диктуете. После «Разрешить» закройте вкладку, обновите страницу (F5) и удерживайте Alt+Z / Alt+Я.</p>
+      <button id="ask" class="primary" type="button">Разрешить микрофон</button>
+      <p id="status" class="hint"></p>
+    </div>
+    <script src="permission.js"></script>
+  </body>
+</html>

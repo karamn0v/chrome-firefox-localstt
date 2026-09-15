@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Настройки GigaAM STT</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="page">
+    <h1>Локальный сервер GigaAM</h1>
+    <p class="muted">Укажите адрес NAS из домашней сети. Порт по умолчанию — 9876.</p>
+    <p class="muted">Версия <span id="extVersion">…</span>. В Firefox по «Проверить связь» разрешите доступ к сайтам. Затем откройте обычную вкладку, при первом Alt+Z разрешите микрофон для этого сайта.</p>
+    <p class="muted">Прокси: исключите <code>192.168.88.176</code>.</p>
+
+    <form class="card" id="form">
+      <label for="serverUrl">URL сервера</label>
+      <input id="serverUrl" name="serverUrl" type="url" required placeholder="http://192.168.88.176:9876" />
+
+      <label class="check"><input id="insertIntoPage" type="checkbox" /> Вставлять текст в активное поле на странице</label>
+      <label class="check"><input id="copyToClipboard" type="checkbox" /> Копировать в буфер обмена (чтобы вставить в любое приложение)</label>
+
+      <div class="row">
+        <button type="submit">Сохранить</button>
+        <button type="button" id="ping" class="primary">Проверить связь</button>
+      </div>
+      <p id="status" class="hint"></p>
+    </form>
+  </body>
+  <script src="options.js"></script>
+</html>

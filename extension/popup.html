@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>GigaAM STT</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="popup">
+    <header>
+      <div>
+        <h1>GigaAM STT</h1>
+        <p class="muted" id="status">Готов к диктовке</p>
+      </div>
+      <button id="settings" class="ghost" title="Настройки">⚙</button>
+    </header>
+
+    <button id="toggle" class="primary">Начать диктовку</button>
+    <p class="hint">Удерживайте <kbd>Alt</kbd>+<kbd>Z</kbd> / <kbd>Alt</kbd>+<kbd>Я</kbd>, отпустите — распознать. Кнопка ниже работает отдельно.</p>
+    <p class="result" id="result" hidden></p>
+    <script src="popup.js"></script>
+  </body>
+</html>

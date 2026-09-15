@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>GigaAM NAS</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #111827;
+        color: #e5e7eb;
+        font: 13px/1.4 system-ui, Segoe UI, sans-serif;
+      }
+      p {
+        margin: 0;
+        padding: 8px 12px;
+      }
+      iframe {
+        display: block;
+        border: 0;
+        width: 100%;
+        height: calc(100vh - 36px);
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Служебная вкладка связи с NAS. Не закрывайте её во время диктовки.</p>
+    <iframe id="nas" title="NAS"></iframe>
+    <script src="nas-bridge.js"></script>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+data/
+*.log
+.DS_Store
+Thumbs.db
+.env
+*.pem
+dist/*.pem
