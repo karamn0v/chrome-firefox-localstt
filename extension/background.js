@@ -6,7 +6,6 @@ const DEFAULTS = {
 };
 
 let state = "idle";
-let transcribeAbort = null;
 let stopping = false;
 let lastToggleAt = 0;
 let nasHelperTabId = null;
@@ -62,10 +61,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
   if (message?.type === "recorder-error") {
-    if (message.error === "permission") {
+    if (message.error === "permission" && hasOffscreenApi()) {
       chrome.tabs.create({ url: chrome.runtime.getURL("permission.html") }).catch(() => {});
     }
-    notify("Микрофон недоступен", message.message || "Разрешите микрофон для этой страницы.");
+    const micHint = hasOffscreenApi()
+      ? "Разрешите микрофон для расширения."
+      : "Разрешите микрофон для этого сайта. Страница расширения в Firefox его не выдаёт.";
+    notify("Микрофон недоступен", message.message || micHint);
     setState("idle").catch(() => {});
     broadcastHud("error", message.message || "Микрофон недоступен").catch(() => {});
     return false;
@@ -107,14 +109,14 @@ async function writeEphemeral(patch) {
 }
 
 async function isMicLive() {
-  const saved = await readEphemeral({ recording: false });
-  if (saved.recording) return true;
   try {
     const status = await sendToRecorder({ type: "is-recording" });
-    if (status?.recording) return true;
+    if (typeof status?.recording === "boolean") return status.recording;
   } catch {
     /* offscreen may be absent */
   }
+  const saved = await readEphemeral({ recording: false });
+  if (saved.recording) return true;
   return state === "recording";
 }
 
@@ -124,7 +126,8 @@ async function getLiveState() {
     if (state !== "recording") await setState("recording");
     return "recording";
   }
-  return state === "recording" ? "idle" : state;
+  if (state === "recording") await setState("idle");
+  return state;
 }
 
 async function toggleDictation() {
@@ -153,7 +156,7 @@ async function stopIfRecording() {
 async function startRecording() {
   const started = await sendToRecorder({ type: "start-recording" });
   if (!started?.ok) {
-    if (started?.error === "permission") {
+    if (started?.error === "permission" && hasOffscreenApi()) {
       await chrome.tabs.create({ url: chrome.runtime.getURL("permission.html") });
     }
     await notify("Микрофон недоступен", started?.message || "Разрешите доступ к микрофону.");
@@ -192,6 +195,7 @@ async function handleRecordingResult(stopped) {
     const text = await transcribe(settings.serverUrl, stopped.audio, stopped.mimeType);
     if (!text) {
       await notify("Пустой ответ", "Модель ничего не распознала. Попробуйте ещё раз.");
+      await broadcastHud("idle");
       return;
     }
 
@@ -203,7 +207,9 @@ async function handleRecordingResult(stopped) {
       try {
         await copyText(text);
       } catch (error) {
-        if (!inserted) throw error;
+        if (!inserted) {
+          await notify("Текст распознан", `${text}\nНе удалось скопировать: ${error.message}`);
+        }
       }
     }
 
@@ -233,10 +239,8 @@ async function pingServer(serverUrl) {
 
 function isReadyPayload(ready) {
   const status = String(ready?.status || "").toLowerCase();
-  if (["ready", "ok", "healthy"].includes(status)) return true;
-  if (ready?.ready === true) return true;
-  if (["loading", "not_ready", "starting", "unhealthy", "error"].includes(status)) return false;
-  return Boolean(ready && typeof ready === "object" && !ready.reason);
+  if (status === "ready") return true;
+  return ready?.ready === true;
 }
 
 async function transcribe(serverUrl, dataUrl, mimeType) {
@@ -256,12 +260,14 @@ async function transcribe(serverUrl, dataUrl, mimeType) {
 
 async function nasJson(base, path) {
   const result = await nasRequest(base, { path, method: "GET" });
-  if (hasOffscreenApi() && !result.ok) throw new Error(httpError(result.status, result.text));
   try {
-    return JSON.parse(result.text || "{}");
+    const payload = JSON.parse(result.text || "");
+    if (payload && typeof payload === "object") return payload;
   } catch {
-    throw new Error("NAS вернул не JSON.");
+    /* HTML or an empty body */
   }
+  if (!result.ok) throw new Error(httpError(result.status, result.text));
+  throw new Error("NAS вернул не JSON.");
 }
 
 async function nasRequest(base, spec) {
@@ -274,9 +280,10 @@ async function nasRequest(base, spec) {
 }
 
 async function nasExtensionFetch(base, spec) {
-  transcribeAbort?.abort();
-  transcribeAbort = new AbortController();
-  const options = { method: spec.method || "GET", signal: transcribeAbort.signal };
+  const controller = new AbortController();
+  const timeoutMs = spec.base64 ? 120000 : 15000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const options = { method: spec.method || "GET", signal: controller.signal };
   if (spec.base64) {
     const binary = Uint8Array.from(atob(spec.base64), (c) => c.charCodeAt(0));
     const file = new File([binary], spec.filename || "speech.webm", {
@@ -289,8 +296,17 @@ async function nasExtensionFetch(base, spec) {
     body.append("language", "ru");
     options.body = body;
   }
-  const response = await fetch(`${base}${spec.path}`, options);
-  return { ok: response.ok, status: response.status, text: await response.text() };
+  try {
+    const response = await fetch(`${base}${spec.path}`, options);
+    return { ok: response.ok, status: response.status, text: await response.text() };
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(spec.base64 ? "NAS не ответил за 2 минуты." : "NAS не ответил вовремя.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function isNetworkFailure(error) {
@@ -429,8 +445,9 @@ function submitNasForm(spec) {
   const file = new File([binary], spec.filename || "speech.webm", { type: spec.mimeType || "audio/webm" });
   const form = document.createElement("form");
   form.method = "POST";
-  form.action = spec.path;
+  form.action = new URL(spec.path, `${spec.origin}/`).href;
   form.enctype = "multipart/form-data";
+  form.encoding = "multipart/form-data";
   const fields = {
     model: "gigaam-v3-e2e-rnnt",
     response_format: "json",
@@ -486,19 +503,35 @@ async function setBridgeIframe(tabId, url) {
       const iframe = document.getElementById("nas");
       if (!iframe) throw new Error("no iframe");
       return new Promise((resolve) => {
-        const timer = setTimeout(() => resolve({ ok: false, error: "iframe timeout" }), 15000);
-        const done = (ok, error) => {
+        const timer = setTimeout(() => {
+          iframe.onload = null;
+          iframe.onerror = null;
+          resolve({ ok: false, error: "iframe timeout" });
+        }, 15000);
+        const fail = () => {
           clearTimeout(timer);
           iframe.onload = null;
           iframe.onerror = null;
-          resolve({ ok, error });
+          resolve({ ok: false, error: "iframe error" });
         };
-        iframe.onload = () => done(true);
-        iframe.onerror = () => done(false, "iframe error");
-        iframe.src = "about:blank";
-        requestAnimationFrame(() => {
+        const go = () => {
+          iframe.onload = () => {
+            clearTimeout(timer);
+            iframe.onload = null;
+            iframe.onerror = null;
+            resolve({ ok: true });
+          };
+          iframe.onerror = fail;
           iframe.src = src;
-        });
+        };
+        const blank = !iframe.getAttribute("src") || iframe.src === "about:blank";
+        if (blank) {
+          go();
+          return;
+        }
+        iframe.onload = go;
+        iframe.onerror = fail;
+        iframe.src = "about:blank";
       });
     },
     args: [url],
@@ -564,7 +597,10 @@ async function insertIntoActiveTab(text) {
 }
 
 function insertTextInPage(text) {
-  const el = document.activeElement;
+  let el = document.activeElement;
+  while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+    el = el.shadowRoot.activeElement;
+  }
   if (!el || el === document.body || el === document.documentElement) return false;
 
   const isInput =
@@ -612,7 +648,38 @@ function insertTextInPage(text) {
 
 async function copyText(text) {
   const result = await sendToRecorder({ type: "copy-text", text });
-  if (!result?.ok) throw new Error(result?.message || "Не удалось скопировать текст.");
+  if (result?.ok) return;
+  const tab = await getActiveTab();
+  if (tab?.id && /^https?:/.test(tab.url || "")) {
+    try {
+      const [entry] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (value) => {
+          try {
+            const previous = document.activeElement;
+            const field = document.createElement("textarea");
+            field.value = value;
+            field.setAttribute("readonly", "");
+            field.style.cssText = "position:fixed;left:0;top:0;opacity:0;";
+            document.documentElement.appendChild(field);
+            field.focus();
+            field.select();
+            const ok = document.execCommand("copy");
+            field.remove();
+            if (previous && previous !== document.body && previous.focus) previous.focus();
+            return ok;
+          } catch {
+            return false;
+          }
+        },
+        args: [text],
+      });
+      if (entry?.result) return;
+    } catch {
+      /* restricted page */
+    }
+  }
+  throw new Error(result?.message || "Не удалось скопировать текст.");
 }
 
 function hasOffscreenApi() {

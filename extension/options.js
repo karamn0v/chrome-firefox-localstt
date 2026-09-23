@@ -44,7 +44,7 @@ document.getElementById("ping").addEventListener("click", async () => {
     if (!response?.ok) throw new Error(response?.error || "Нет ответа от расширения");
     if (!response.readyOk) {
       statusEl.className = "err";
-      statusEl.textContent = `Сервер жив, но модель ещё не готова: ${response.ready?.reason || "подождите первую загрузку весов"}.`;
+      statusEl.textContent = `Сервер жив, но модель ещё не готова: ${readyHint(response.ready)}.`;
       return;
     }
     const health = response.health || {};
@@ -55,6 +55,16 @@ document.getElementById("ping").addEventListener("click", async () => {
     statusEl.textContent = `Нет связи: ${error.message}. Прокси: исключите 192.168.88.176.`;
   }
 });
+
+function readyHint(ready) {
+  const reason = String(ready?.reason || "");
+  const labels = {
+    initializing: "модель ещё загружается",
+    pool_exhausted: "все слоты распознавания заняты",
+    shutting_down: "сервер останавливается",
+  };
+  return labels[reason] || reason || "подождите первую загрузку весов";
+}
 
 function sendRuntime(message) {
   return new Promise((resolve, reject) => {
