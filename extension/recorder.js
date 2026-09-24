@@ -5,7 +5,9 @@
   let chunks = [];
   let mimeType = "audio/webm";
   let maxTimer = null;
+  let startedAt = 0;
   const MAX_MS = 90_000;
+  const MIN_MS = 300;
 
   async function startRecording() {
     if (isRecording()) return { ok: true, mimeType };
@@ -25,6 +27,7 @@
     mediaRecorder.addEventListener("dataavailable", (event) => {
       if (event.data?.size) chunks.push(event.data);
     });
+    startedAt = Date.now();
     mediaRecorder.start(250);
     playCue("start");
     clearTimeout(maxTimer);
@@ -52,7 +55,8 @@
         mediaRecorder = null;
         const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
         chunks = [];
-        if (blob.size < 2000) {
+        const elapsed = Date.now() - startedAt;
+        if (blob.size < 100 || elapsed < MIN_MS) {
           resolve({ ok: false, message: "Слишком короткая запись." });
           return;
         }
@@ -101,8 +105,13 @@
   }
 
   function playCue(kind) {
+    let ctx;
+    try {
+      ctx = new AudioContext();
+    } catch {
+      return;
+    }
     const notes = kind === "start" ? [880, 1175] : [784, 523];
-    const ctx = new AudioContext();
     const start = () => {
       const now = ctx.currentTime;
       notes.forEach((freq, index) => {
@@ -122,11 +131,15 @@
       });
       setTimeout(() => ctx.close().catch(() => {}), 400);
     };
-    if (ctx.state === "suspended") {
-      ctx.resume().then(start).catch(() => {});
-      return;
+    try {
+      if (ctx.state === "suspended") {
+        ctx.resume().then(start).catch(() => {});
+        return;
+      }
+      start();
+    } catch {
+      ctx.close().catch(() => {});
     }
-    start();
   }
 
   function classify(error) {

@@ -53,7 +53,17 @@ function onKeyDown(event) {
   event.stopImmediatePropagation();
   comboDown = true;
   if (isFirefox) {
-    const started = globalThis.gigaamRecorder.startRecording();
+    const recorder = globalThis.gigaamRecorder;
+    if (!recorder) {
+      comboDown = false;
+      chrome.runtime.sendMessage({
+        type: "recorder-error",
+        error: "other",
+        message: "Обновите страницу (F5) и снова нажмите Alt+Z.",
+      }).catch(() => {});
+      return;
+    }
+    const started = recorder.startRecording();
     chrome.runtime.sendMessage({ type: "page-ptt-down" }).catch(() => {});
     Promise.resolve(started).then((result) => {
       if (!result?.ok) {
@@ -83,7 +93,9 @@ function onKeyDown(event) {
 
 function onKeyUp(event) {
   if (!isHotkeyRelease(event)) return;
+  const wasDown = comboDown;
   comboDown = false;
+  if (!wasDown) return;
   if (isFirefox) {
     const recorder = globalThis.gigaamRecorder;
     if (!recorder?.isRecording()) return;

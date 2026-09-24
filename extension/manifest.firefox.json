@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GigaAM STT",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "Диктовка в текстовое поле через локальную GigaAM v3 e2e-rnnt на NAS.",
   "browser_specific_settings": {
     "gecko": {
